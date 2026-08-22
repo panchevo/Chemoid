@@ -110,6 +110,10 @@
         .chem-object:hover {
             filter: drop-shadow(0 0 10px #6aa0c0);
         }
+        .chem-object.compound {
+            color: #ffd866;
+            font-size: 15px;
+        }
         .info-bar {
             position: absolute;
             bottom: 14px;
@@ -198,20 +202,47 @@
             font-size: 15px;
             margin-top: 2px;
         }
+        .chem-tooltip .complex-tag {
+            display: inline-block;
+            background: #2a4a3a;
+            padding: 2px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #8fdaa0;
+            margin-top: 4px;
+        }
+        .clear-btn {
+            background: #1a3040;
+            border: 1px solid #3a5a6e;
+            color: #b0d0e0;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 8px;
+            transition: 0.2s;
+            width: 100%;
+        }
+        .clear-btn:hover {
+            background: #2a4a5e;
+            border-color: #6aa0c0;
+        }
     </style>
 </head>
 <body>
     <div class="table-panel">
         <h3>⚛️ ПЕРИОДИЧЕСКАЯ</h3>
         <div class="periodic-grid" id="periodicGrid"></div>
+        <button class="clear-btn" id="clearBtn">🗑️ Очистить всё</button>
         <div style="margin-top: 12px; color:#5a7a8a; font-size:12px; text-align:center; border-top:1px solid #1a3040; padding-top:8px;">
             <span style="color:#8fcbff;">клик</span> · создать<br>
             <span style="color:#8fcbff;">перетащить</span> · соединить (при отпускании)<br>
-            <span style="color:#8fcbff;">навести</span> · полное название
+            <span style="color:#8fcbff;">навести</span> · полное название<br>
+            <span style="color:#ffd866;">жёлтые</span> · сложные соединения
         </div>
     </div>
     <div class="workspace" id="workspace">
-        <div class="info-bar">🧪 <span>ХИМОИД</span> · наведите для полного названия соединения</div>
+        <div class="info-bar">🧪 <span>ХИМОИД</span> · перетащите элементы для создания сложных соединений</div>
     </div>
 
     <div class="chem-tooltip" id="tooltip"></div>
@@ -234,7 +265,6 @@
                 "Rg","Cn","Nh","Fl","Mc","Lv","Ts","Og"
             ];
 
-            // ---- Данные элементов ----
             const elementData = {
                 H: { name: 'Водород', mass: '1.008', group: 'Неметалл', rus: 'водород' },
                 He: { name: 'Гелий', mass: '4.003', group: 'Благородный газ', rus: 'гелий' },
@@ -356,7 +386,6 @@
                 Og: { name: 'Оганесон', mass: '294.000', group: 'Благородный газ', rus: 'оганесон' }
             };
 
-            // ---- Валентности ----
             const valenceMap = {
                 H:1, He:0, Li:1, Be:2, B:3, C:4, N:3, O:2, F:1, Ne:0,
                 Na:1, Mg:2, Al:3, Si:4, P:3, S:2, Cl:1, Ar:0, K:1, Ca:2,
@@ -372,13 +401,10 @@
                 Rg:3, Cn:2, Nh:3, Fl:4, Mc:3, Lv:4, Ts:3, Og:2
             };
 
-            // ---- Генерация полного названия соединения по составу ----
+            // ---- Генерация названия для сложных соединений ----
             function generateCompoundName(composition) {
-                if (!composition || composition.length < 2) {
-                    const el = composition ? composition[0] : '';
-                    return elementData[el]?.rus || el || 'Неизвестный';
-                }
-                // Разбираем состав на отдельные символы (поддерживает двухбуквенные)
+                if (!composition) return 'Неизвестный';
+                
                 const tokens = [];
                 let i = 0;
                 while (i < composition.length) {
@@ -390,46 +416,151 @@
                         i++;
                     }
                 }
-                // Строим название: для каждого токена берём русское название в родительном падеже (упрощённо)
-                // Для оксидов, гидридов и т.д. делаем простую эвристику
+
+                // Получаем русские названия
                 const names = tokens.map(sym => {
                     const data = elementData[sym];
                     return data ? data.rus : sym;
                 });
-                // Простейшая эвристика для оксидов: если есть O и другой элемент
-                if (tokens.includes('O') && tokens.length === 2) {
+
+                // Если только один элемент - возвращаем его название
+                if (tokens.length === 1) {
+                    const data = elementData[tokens[0]];
+                    return data ? data.rus : tokens[0];
+                }
+
+                // Определяем тип соединения по наличию характерных элементов
+                const hasO = tokens.includes('O');
+                const hasH = tokens.includes('H');
+                const hasCl = tokens.includes('Cl');
+                const hasF = tokens.includes('F');
+                const hasC = tokens.includes('C');
+                const hasN = tokens.includes('N');
+                const hasS = tokens.includes('S');
+
+                // Находим металлы (щелочные, щелочноземельные, переходные)
+                const metals = tokens.filter(sym => {
+                    const data = elementData[sym];
+                    if (!data) return false;
+                    const group = data.group;
+                    return group.includes('Щелочной') || group.includes('Щёлочноземельный') || 
+                           group.includes('Переходный') || group === 'Металл';
+                });
+
+                // Находим неметаллы
+                const nonMetals = tokens.filter(sym => {
+                    const data = elementData[sym];
+                    if (!data) return false;
+                    const group = data.group;
+                    return group === 'Неметалл' || group === 'Галоген' || group === 'Металлоид';
+                });
+
+                // Оксиды (O + что-то)
+                if (hasO && nonMetals.length === 1 && metals.length === 0 && tokens.length === 2) {
                     const other = tokens.find(s => s !== 'O');
                     if (other) {
                         const otherName = elementData[other]?.rus || other;
-                        // Оксид + родительный падеж (упрощённо)
+                        // Определяем тип оксида
+                        const elData = elementData[other];
+                        if (elData && (elData.group.includes('Щелочной') || elData.group.includes('Щёлочноземельный'))) {
+                            return `Оксид ${otherName}я`;
+                        }
                         return `Оксид ${otherName}`;
                     }
                 }
+
                 // Гидриды
-                if (tokens.includes('H') && tokens.length === 2) {
+                if (hasH && tokens.length === 2) {
                     const other = tokens.find(s => s !== 'H');
                     if (other) {
                         const otherName = elementData[other]?.rus || other;
                         return `Гидрид ${otherName}`;
                     }
                 }
-                // Хлориды
-                if (tokens.includes('Cl') && tokens.length === 2) {
+
+                // Галогениды
+                if (hasCl && tokens.length === 2) {
                     const other = tokens.find(s => s !== 'Cl');
                     if (other) {
                         const otherName = elementData[other]?.rus || other;
                         return `Хлорид ${otherName}`;
                     }
                 }
-                // Фториды
-                if (tokens.includes('F') && tokens.length === 2) {
+                if (hasF && tokens.length === 2) {
                     const other = tokens.find(s => s !== 'F');
                     if (other) {
                         const otherName = elementData[other]?.rus || other;
                         return `Фторид ${otherName}`;
                     }
                 }
-                // Если больше 2 элементов или сложный случай — просто перечисляем
+
+                // Соли (металл + неметалл)
+                if (metals.length > 0 && nonMetals.length > 0) {
+                    const metalName = elementData[metals[0]]?.rus || metals[0];
+                    const nonMetalName = elementData[nonMetals[0]]?.rus || nonMetals[0];
+                    // Простое название соли
+                    if (nonMetals[0] === 'Cl') return `Хлорид ${metalName}`;
+                    if (nonMetals[0] === 'F') return `Фторид ${metalName}`;
+                    if (nonMetals[0] === 'O') return `Оксид ${metalName}`;
+                    if (nonMetals[0] === 'S') return `Сульфид ${metalName}`;
+                    if (nonMetals[0] === 'N') return `Нитрид ${metalName}`;
+                    if (nonMetals[0] === 'C') return `Карбид ${metalName}`;
+                    return `${metalName} ${nonMetalName}ид`;
+                }
+
+                // Органические соединения (C + H + O + N)
+                if (hasC && hasH && (hasO || hasN)) {
+                    const carbonCount = tokens.filter(s => s === 'C').length;
+                    const hydrogenCount = tokens.filter(s => s === 'H').length;
+                    if (carbonCount === 1 && hydrogenCount >= 4) {
+                        if (hasO) return 'Метанол (CH₃OH)';
+                        return 'Метан (CH₄)';
+                    }
+                    if (carbonCount === 2 && hydrogenCount >= 6) {
+                        if (hasO) return 'Этанол (C₂H₅OH)';
+                        return 'Этан (C₂H₆)';
+                    }
+                    if (carbonCount === 3 && hydrogenCount >= 8) {
+                        if (hasO) return 'Пропанол (C₃H₇OH)';
+                        return 'Пропан (C₃H₈)';
+                    }
+                    return `Углеводород (${composition})`;
+                }
+
+                // Кислоты (H + неметалл + O)
+                if (hasH && hasO && nonMetals.length >= 1) {
+                    const acidCenter = nonMetals.find(s => s !== 'O' && s !== 'H');
+                    if (acidCenter) {
+                        const centerName = elementData[acidCenter]?.rus || acidCenter;
+                        if (acidCenter === 'S') return 'Серная кислота (H₂SO₄)';
+                        if (acidCenter === 'N') return 'Азотная кислота (HNO₃)';
+                        if (acidCenter === 'Cl') return 'Хлорная кислота (HClO₄)';
+                        if (acidCenter === 'C') return 'Угольная кислота (H₂CO₃)';
+                        if (acidCenter === 'P') return 'Фосфорная кислота (H₃PO₄)';
+                        return `${centerName}ная кислота`;
+                    }
+                }
+
+                // Если соединение сложное - просто перечисляем с указанием количества
+                if (tokens.length >= 3) {
+                    // Подсчитываем количество каждого элемента
+                    const counts = {};
+                    tokens.forEach(sym => {
+                        counts[sym] = (counts[sym] || 0) + 1;
+                    });
+                    const parts = [];
+                    for (const [sym, count] of Object.entries(counts)) {
+                        const name = elementData[sym]?.rus || sym;
+                        if (count === 1) {
+                            parts.push(name);
+                        } else {
+                            parts.push(`${name} (×${count})`);
+                        }
+                    }
+                    return `Сложное соединение: ${parts.join(' + ')}`;
+                }
+
+                // Если ничего не подошло - просто перечисляем
                 if (names.length <= 3) {
                     return names.join('') + ' (соединение)';
                 }
@@ -440,6 +571,7 @@
             const workspace = document.getElementById('workspace');
             const grid = document.getElementById('periodicGrid');
             const tooltip = document.getElementById('tooltip');
+            const clearBtn = document.getElementById('clearBtn');
 
             // ---- Заполняем таблицу ----
             elements.forEach(symbol => {
@@ -452,27 +584,24 @@
 
             // ---- Получение данных для подсказки ----
             function getTooltipData(symbol, composition) {
-                const base = elementData[symbol] || { name: 'Неизвестный элемент', mass: '?', group: '?', rus: symbol };
-                const val = valenceMap[symbol] !== undefined ? valenceMap[symbol] : 0;
                 const isCompound = composition && composition.length > 1;
+                const base = elementData[symbol] || { name: 'Неизвестный элемент', mass: '?', group: '?', rus: symbol };
+                const val = valenceMap[composition] !== undefined ? valenceMap[composition] : (valenceMap[symbol] || 0);
                 const displayName = isCompound ? `Соединение (${composition})` : base.name;
                 const group = isCompound ? 'Химическое соединение' : base.group;
                 const mass = isCompound ? '—' : base.mass;
-                const valenceStr = isCompound ? (valenceMap[composition] !== undefined ? valenceMap[composition] : val) : val;
-                let fullName = isCompound ? generateCompoundName(composition) : base.rus;
-                // Делаем первую букву заглавной
-                if (fullName.length > 0) {
-                    fullName = fullName.charAt(0).toUpperCase() + fullName.slice(1);
-                }
+                const fullName = generateCompoundName(composition || symbol);
+                
                 return {
                     symbol: symbol,
                     name: displayName,
                     mass: mass,
                     group: group,
-                    valence: valenceStr,
+                    valence: val,
                     composition: composition || symbol,
                     isCompound: isCompound,
-                    fullName: fullName
+                    fullName: fullName.charAt(0).toUpperCase() + fullName.slice(1),
+                    elementCount: composition ? composition.length : 1
                 };
             }
 
@@ -480,21 +609,16 @@
             function showTooltip(e, symbol, composition) {
                 const data = getTooltipData(symbol, composition);
                 let html = `<div class="title">${data.symbol} · ${data.name}</div>`;
+                html += `<div class="full-name">${data.fullName}</div>`;
                 if (data.isCompound) {
-                    html += `<div class="full-name">${data.fullName}</div>`;
-                } else {
-                    html += `<div class="full-name">${data.fullName}</div>`;
+                    html += `<div class="complex-tag">🧪 ${data.elementCount} элемента(ов)</div>`;
                 }
                 html += `<div class="prop"><span class="label">Группа</span><span class="value">${data.group}</span></div>`;
                 if (data.mass !== '—') {
                     html += `<div class="prop"><span class="label">Атомная масса</span><span class="value">${data.mass}</span></div>`;
                 }
                 html += `<div class="prop"><span class="label">Валентность</span><span class="value">${data.valence}</span></div>`;
-                if (data.isCompound) {
-                    html += `<div class="composition-detail">Состав: ${data.composition}</div>`;
-                } else {
-                    html += `<div class="composition-detail">${data.symbol}</div>`;
-                }
+                html += `<div class="composition-detail">Состав: ${data.composition}</div>`;
                 tooltip.innerHTML = html;
 
                 const tx = e.clientX + 16;
@@ -502,7 +626,7 @@
                 let left = tx;
                 let top = ty;
                 const tw = tooltip.offsetWidth || 320;
-                const th = tooltip.offsetHeight || 220;
+                const th = tooltip.offsetHeight || 240;
                 if (left + tw > window.innerWidth - 10) left = e.clientX - tw - 10;
                 if (top + th > window.innerHeight - 10) top = e.clientY - th - 10;
                 if (left < 10) left = 10;
@@ -517,12 +641,16 @@
             }
 
             // ---- Создание элемента ----
-            function createChemObject(symbol, x, y) {
+            function createChemObject(symbol, x, y, composition) {
                 const el = document.createElement('div');
                 el.className = 'chem-object';
-                el.textContent = symbol;
+                const comp = composition || symbol;
+                el.textContent = comp.length > 1 ? comp : symbol;
                 el.dataset.symbol = symbol;
-                el.dataset.composition = symbol;
+                el.dataset.composition = comp;
+                if (comp.length > 1) {
+                    el.classList.add('compound');
+                }
                 el.style.left = x + 'px';
                 el.style.top = y + 'px';
                 workspace.appendChild(el);
@@ -603,13 +731,11 @@
                 el.addEventListener('touchstart', onStart, { passive: false });
             }
 
-            // ---- Соединение ----
+            // ---- Соединение (поддержка сложных) ----
             function checkAndMerge(draggedEl) {
                 const dragRect = draggedEl.getBoundingClientRect();
+                const dragComposition = draggedEl.dataset.composition || draggedEl.dataset.symbol;
                 const dragSymbol = draggedEl.dataset.symbol;
-                const dragComposition = draggedEl.dataset.composition || dragSymbol;
-                const dragVal = valenceMap[dragSymbol] || 0;
-                if (dragVal === 0) return;
 
                 for (let other of chemObjects) {
                     if (other === draggedEl) continue;
@@ -620,28 +746,58 @@
                                      dragRect.top > otherRect.bottom);
                     if (!overlap) continue;
 
+                    const otherComposition = other.dataset.composition || other.dataset.symbol;
                     const otherSymbol = other.dataset.symbol;
-                    const otherVal = valenceMap[otherSymbol] || 0;
-                    if (otherVal === 0) continue;
 
-                    const newComposition = dragComposition + otherSymbol;
-                    const centerX = (dragRect.left + dragRect.right) / 2 - 20;
-                    const centerY = (dragRect.top + dragRect.bottom) / 2 - 12;
+                    // Создаём новое соединение - объединяем составы
+                    const newComposition = dragComposition + otherComposition;
+                    
+                    // Проверяем, что получилось валидное соединение (хотя бы с одной валентностью > 0)
+                    let hasValence = false;
+                    const tokens = [];
+                    let i = 0;
+                    while (i < newComposition.length) {
+                        if (i+1 < newComposition.length && newComposition[i+1] >= 'a' && newComposition[i+1] <= 'z') {
+                            tokens.push(newComposition.substring(i, i+2));
+                            i += 2;
+                        } else {
+                            tokens.push(newComposition[i]);
+                            i++;
+                        }
+                    }
+                    for (const sym of tokens) {
+                        if ((valenceMap[sym] || 0) > 0) {
+                            hasValence = true;
+                            break;
+                        }
+                    }
+                    if (!hasValence) continue;
+
+                    // Вычисляем позицию нового соединения (между двумя)
+                    const centerX = (dragRect.left + dragRect.right) / 2 - 30;
+                    const centerY = (dragRect.top + dragRect.bottom) / 2 - 15;
                     const wsRect = workspace.getBoundingClientRect();
-                    const newX = Math.max(0, Math.min(wsRect.width - 40, centerX - wsRect.left));
+                    const newX = Math.max(0, Math.min(wsRect.width - 60, centerX - wsRect.left));
                     const newY = Math.max(0, Math.min(wsRect.height - 30, centerY - wsRect.top));
 
+                    // Удаляем оба объекта
                     removeObject(draggedEl);
                     removeObject(other);
 
-                    const firstSymbol = dragComposition[0] || '?';
-                    const newEl = createChemObject(firstSymbol, newX, newY);
-                    newEl.dataset.composition = newComposition;
+                    // Создаём новое соединение - отображаем полную формулу
+                    const firstSymbol = newComposition[0] || '?';
+                    const newEl = createChemObject(firstSymbol, newX, newY, newComposition);
                     newEl.textContent = newComposition;
-                    const newVal = Math.max(dragVal, otherVal);
-                    valenceMap[newComposition] = newVal;
-                    valenceMap[firstSymbol] = newVal;
-                    newEl.dataset.symbol = firstSymbol;
+                    newEl.dataset.composition = newComposition;
+                    
+                    // Обновляем валентность для всего соединения (максимальная)
+                    let maxVal = 0;
+                    for (const sym of tokens) {
+                        const v = valenceMap[sym] || 0;
+                        if (v > maxVal) maxVal = v;
+                    }
+                    valenceMap[newComposition] = maxVal;
+
                     return;
                 }
             }
@@ -655,6 +811,23 @@
                 if (el.parentNode) el.parentNode.removeChild(el);
             }
 
+            // ---- Очистка ----
+            function clearWorkspace() {
+                for (let i = chemObjects.length - 1; i >= 0; i--) {
+                    const el = chemObjects[i];
+                    if (el.parentNode) el.parentNode.removeChild(el);
+                }
+                chemObjects = [];
+                // Очищаем кастомные валентности (оставляем только базовые)
+                for (const key in valenceMap) {
+                    if (key.length > 2) {
+                        delete valenceMap[key];
+                    }
+                }
+            }
+
+            clearBtn.addEventListener('click', clearWorkspace);
+
             // ---- Создание по клику ----
             grid.addEventListener('click', (e) => {
                 const cell = e.target.closest('.element-cell');
@@ -663,8 +836,7 @@
                 const wsRect = workspace.getBoundingClientRect();
                 const x = wsRect.width/2 - 20 + (Math.random() * 120 - 60);
                 const y = wsRect.height/2 - 12 + (Math.random() * 120 - 60);
-                const el = createChemObject(symbol, x, y);
-                el.dataset.composition = symbol;
+                createChemObject(symbol, x, y, symbol);
             });
 
             // ---- Скрываем подсказку ----
@@ -685,8 +857,7 @@
                     const cy = wsRect.height/2;
                     const x = cx + Math.cos(angle) * radius - 16;
                     const y = cy + Math.sin(angle) * radius - 12;
-                    const el = createChemObject(sym, x, y);
-                    el.dataset.composition = sym;
+                    createChemObject(sym, x, y, sym);
                 });
             }
 
