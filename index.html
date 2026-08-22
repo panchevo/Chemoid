@@ -765,9 +765,17 @@
                     totalVal += v;
                 }
                 
-                if (hasNonMetal && totalVal % 2 !== 0 && !tokens.includes('H')) {
-                    return false;
-                }
+               // Замените блок с totalVal на:
+if (hasNonMetal && totalVal % 2 !== 0 && !tokens.includes('H')) {
+    // Проверяем, есть ли переходный металл (у него переменная валентность)
+    const hasTransitionMetal = tokens.some(sym => {
+        const data = elementData[sym];
+        return data && data.type === 'металл' && data.group.includes('Переходный');
+    });
+    if (!hasTransitionMetal) {
+        return false;
+    }
+}
                 
                 return true;
             }
